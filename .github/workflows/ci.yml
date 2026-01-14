@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check src tests workflows
+
+      - name: Format check (ruff)
+        run: ruff format --check src tests
+
+      - name: Types (mypy, strict)
+        run: mypy
+
+      # Split out deliberately. When CI goes red, the first thing I want to know
+      # is WHICH KIND of red: a broken unit test is an inconvenience, a violated
+      # scientific constraint is a different category of problem entirely and
+      # should be legible as such from the job list alone.
+      - name: Unit tests
+        run: pytest tests/test_mechanistic.py -v
+
+      - name: Scientific constraint tests
+        run: pytest tests/test_scientific_constraints.py -v
+
+      - name: Regression tests (golden values + feature contract)
+        run: pytest tests/test_regression.py -v
+
+      - name: Coverage
+        run: pytest --cov=hybridbio --cov-report=term-missing
