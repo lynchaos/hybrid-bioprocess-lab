@@ -13,16 +13,25 @@ one line and trust, so that they never have to write evaluation glue again.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Protocol
 
 import numpy as np
 from numpy.typing import NDArray
 
 from .constraints import ConstraintReport, check_trajectory
 from .data import Batch
-from .hybrid import HybridModel
-from .mechanistic import STATE_NAMES
+from .mechanistic import STATE_NAMES, KineticParameters
 
 Array = NDArray[np.float64]
+
+
+class BatchTrajectoryModel(Protocol):
+    """Minimal interface for models compared on observed batches."""
+
+    params: KineticParameters
+
+    def simulate_batch(self, batch: Batch) -> tuple[Array, Array]: ...
+
 
 #: States we actually judge the model on. Volume is excluded: it is set by a
 #: pump, so predicting it well is not an achievement, it is arithmetic.
@@ -78,7 +87,7 @@ def nrmse(y_true: Array, y_pred: Array) -> float:
     return float(np.sqrt(np.mean((y_true - y_pred) ** 2)) / denom)
 
 
-def evaluate(model: HybridModel, batches: list[Batch]) -> EvaluationReport:
+def evaluate(model: BatchTrajectoryModel, batches: list[Batch]) -> EvaluationReport:
     """Score a model against held-out batches, on metrics and on science."""
     if not batches:
         raise ValueError("refusing to evaluate on an empty batch list")
@@ -88,14 +97,7 @@ def evaluate(model: HybridModel, batches: list[Batch]) -> EvaluationReport:
     final_titre_err: list[float] = []
 
     for batch in batches:
-        model_b = HybridModel(
-            params=model.params,
-            feed=batch.feed,
-            correction=model.correction,
-            t_end_h=model.t_end_h,
-            dt_h=model.dt_h,
-        )
-        t, Y_pred = model_b.simulate(batch.y0)
+        t, Y_pred = model.simulate_batch(batch)
         report.constraints.append(check_trajectory(t, Y_pred, model.params))
 
         n = min(len(batch.t), len(t))

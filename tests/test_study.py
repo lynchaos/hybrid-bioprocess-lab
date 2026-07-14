@@ -23,4 +23,6 @@ def test_repeated_study_returns_paired_batch_evidence() -> None:
     )
     assert result.n_runs == 2
     assert result.nrmse_delta.n_observations == 4
+    assert result.hybrid_vs_pure_ml_delta.n_observations == 4
     assert result.admissible_runs == 2
+    assert len(result.pure_ml_reports) == 2

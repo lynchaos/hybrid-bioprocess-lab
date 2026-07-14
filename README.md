@@ -1,6 +1,10 @@
 # hybrid-bioprocess-lab
 
-A personal lab for practising production-grade ML engineering on hybrid bioprocess models.
+[![CI](https://github.com/lynchaos/hybrid-bioprocess-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/lynchaos/hybrid-bioprocess-lab/actions/workflows/ci.yml)
+
+An applied scientific-ML portfolio project: a constrained hybrid model for a
+fed-batch mammalian cell culture, built with the research and production
+discipline needed to make model claims inspectable.
 
 The domain is a fed-batch mammalian cell culture. The scientific question is:
 how do you add a data-driven layer to a mechanistic bioprocess model without
@@ -12,6 +16,35 @@ ML team uses — Flyte, MLflow, Optuna, Ray Tune, packaging, CI, and a clean
 inference path — while keeping the science legible?
 
 This repo is an answer to both.
+
+> **Scope:** all reported outcomes use a synthetic fed-batch plant. They
+> demonstrate method design and reproducibility, not industrial process
+> validation or readiness for process decisions.
+
+## At a glance
+
+| Question | What this repository demonstrates |
+|---|---|
+| Where does ML belong? | A bounded, smooth correction to the specific growth rate, not unconstrained state derivatives. |
+| What stops implausible models? | Constraints are hard promotion and selection gates, not a penalty in an accuracy objective. |
+| Is the result repeatable? | Whole-batch splits, predeclared seeds, and paired bootstrap confidence intervals. |
+| Can it leave a notebook? | Package API, CLI, saved-model inference, MLflow registration, reports, Docker, and CI. |
+| What remains unknown? | Performance, calibration, and safety on external real batches. |
+
+## Model architecture
+
+```mermaid
+flowchart LR
+  data[Batch measurements\nunit-validated CSV] --> labels[Smoothed growth\ncorrection labels]
+  labels --> correction[Bounded smooth\nML correction]
+  state[ODE state\nXv, S, L, P, V] --> mechanism[Mechanistic\nmass balances]
+  correction --> seam[mu_eff = mu_mech x correction]
+  mechanism --> seam
+  seam --> trajectory[Hybrid trajectory]
+  trajectory --> gate{Scientific\nconstraint gate}
+  gate -->|admissible| report[Metrics, reports\nregistry candidate]
+  gate -->|violated| reject[Reject / prune]
+```
 
 ---
 
@@ -27,6 +60,7 @@ This repo is an answer to both.
 | Evaluation | `src/hybridbio/evaluation.py` | Metrics + admissibility, co-equal |
 | Data contract | `src/hybridbio/ingestion.py` | Unit-explicit CSV validation before modeling |
 | Research studies | `src/hybridbio/study.py`, `uncertainty.py` | Repeated seeds, batch bootstrap CIs, trajectory intervals |
+| Pure-ML comparator | `src/hybridbio/pure_ml.py` | Direct trajectory benchmark with no mechanistic state evolution |
 | Inference | `src/hybridbio/inference.py` | Load a saved model and predict trajectories |
 | Reporting | `src/hybridbio/reporting.py` | Markdown/HTML reports for scientists and CI |
 | Registry | `src/hybridbio/registry.py` | MLflow model registry with validation gate |
@@ -103,6 +137,12 @@ Tests are split by concern:
 - `test_registry.py` — MLflow registry integration
 - `test_rollout.py` — rollout training
 - `test_reporting.py` — report generation
+- `test_ingestion.py` — CSV units and data-contract failures
+- `test_study.py` — repeated-study and paired-bootstrap behavior
+- `test_uncertainty.py` — batch-bootstrap trajectory intervals
+
+The local suite contains 54 tests. GitHub Actions validates quality across
+Python 3.11 and 3.12, then runs a Docker CLI smoke test.
 
 ### Train and save a model from the CLI
 
@@ -142,11 +182,31 @@ python workflows/ray_tune_sweep.py --trials 30
 
 ## Synthetic Study Evidence
 
+![Synthetic held-out and repeated-study evidence](docs/assets/synthetic-study-evidence.png)
+
+This graphic is generated from the public package by
+[`scripts/generate_readme_visuals.py`](scripts/generate_readme_visuals.py), not
+hand-authored. In the deterministic checked-in experiment:
+
+- One held-out split improves mean NRMSE from **0.1419** for the mechanistic
+  baseline to **0.1000** for the constrained hybrid.
+- Across three predeclared seeds and three held-out batches per seed, the paired
+  hybrid-minus-baseline NRMSE is **-0.0271** with a 95% bootstrap interval of
+  **[-0.0377, -0.0167]**.
+- All repeated-study candidates passed the scientific constraint gate.
+
 The repository distinguishes a single model run from evidence. `study.py`
 repeats held-out, batch-level comparisons over predeclared seeds and reports a
 paired bootstrap confidence interval for the hybrid-minus-mechanistic NRMSE.
 A result is called an improvement only when every run is scientifically
 admissible and the interval is strictly below zero.
+
+The same study trains a direct multi-output pure-ML trajectory comparator from
+only initial conditions, feed settings, and time. It is evaluated on exactly
+the same held-out batches and through the same scientific gate. This keeps the
+comparison fair while making the value of the mechanistic structure visible:
+an accurate direct trajectory fit is still rejected if it violates process
+constraints.
 
 ```python
 from hybridbio import StudyConfig, run_repeated_study
@@ -160,11 +220,23 @@ print(result.candidate_improves)
 then returns trajectory quantiles and empirical held-out coverage. The
 intervals describe uncertainty from the available synthetic training batches;
 they are **not** operational prediction guarantees. Calibration on external,
-real batches is required before using them for process decisions.
+real batches is required before using them for process decisions. The initial
+all-state empirical coverage is **37.9%**, intentionally shown as a calibration
+gap rather than hidden behind an uncertainty label.
+
+Regenerate the checked-in evidence visual with:
+
+```bash
+python scripts/generate_readme_visuals.py
+```
 
 For the required CSV column names, physical units, and validation policy, see
 [docs/data-contract.md](docs/data-contract.md). No missing values are silently
 imputed at this boundary.
+
+The full reproducible study walkthrough, including held-out trajectories and
+bootstrap intervals, is in
+[notebooks/hybrid_bioprocess_analysis.ipynb](notebooks/hybrid_bioprocess_analysis.ipynb).
 
 ---
 
@@ -185,7 +257,7 @@ hybrid-bioprocess-lab/
 ├── tests/                  # Pytest suite
 ├── workflows/              # Flyte, Optuna, Ray Tune
 ├── notebooks/              # Exploratory notebook
-├── docs/                   # Job description, learning log
+├── docs/                   # Data contract, learning log, pitch support, visuals
 ├── Dockerfile
 ├── pyproject.toml
 └── .github/workflows/ci.yml
@@ -210,6 +282,13 @@ hybrid-bioprocess-lab/
 
 See `docs/LEARNING_LOG.md` for the running notes: the mistakes, the fixes, and
 the lessons. It is the most honest part of the project.
+
+## Next validation milestones
+
+1. Evaluate against versioned real process batches from distinct operating regimes.
+2. Add a pure data-driven trajectory comparator under the same batch-level split.
+3. Calibrate bootstrap intervals and define decision thresholds with process experts.
+4. Connect the local MLflow registry proof to a remote approval and deployment workflow.
 
 ---
 

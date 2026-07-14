@@ -16,6 +16,7 @@ from .data import generate_dataset, train_test_split_batches
 from .evaluation import EvaluationReport, evaluate
 from .hybrid import HybridModel
 from .mechanistic import KineticParameters
+from .pure_ml import PureMLConfig, train_pure_ml_trajectory
 from .training import TrainingConfig, train_and_evaluate
 
 Array = NDArray[np.float64]
@@ -48,8 +49,11 @@ class StudyResult:
     config: StudyConfig
     baseline_reports: list[EvaluationReport]
     candidate_reports: list[EvaluationReport]
+    pure_ml_reports: list[EvaluationReport]
     nrmse_delta: ConfidenceInterval
+    hybrid_vs_pure_ml_delta: ConfidenceInterval
     admissible_runs: int
+    pure_ml_admissible_runs: int
 
     @property
     def n_runs(self) -> int:
@@ -91,6 +95,7 @@ def run_repeated_study(
     config: StudyConfig | None = None,
     params: KineticParameters | None = None,
     training_config: TrainingConfig | None = None,
+    pure_ml_config: PureMLConfig | None = None,
 ) -> StudyResult:
     """Compare hybrid and mechanistic models over predefined synthetic seeds.
 
@@ -104,7 +109,9 @@ def run_repeated_study(
     training_config = training_config or TrainingConfig()
     baseline_reports: list[EvaluationReport] = []
     candidate_reports: list[EvaluationReport] = []
-    deltas: list[float] = []
+    pure_ml_reports: list[EvaluationReport] = []
+    hybrid_vs_baseline_deltas: list[float] = []
+    hybrid_vs_pure_ml_deltas: list[float] = []
 
     for seed in config.seeds:
         batches = generate_dataset(n_batches=config.n_batches, seed=seed)
@@ -115,17 +122,33 @@ def run_repeated_study(
             p=params,
             cfg=training_config,
         )
+        pure_ml = train_pure_ml_trajectory(
+            train_batches,
+            params=params,
+            config=pure_ml_config,
+            t_end_h=training_config.t_end_h,
+        )
+        pure_ml_report = evaluate(pure_ml, test_batches)
         baseline_reports.append(baseline)
         candidate_reports.append(candidate)
+        pure_ml_reports.append(pure_ml_report)
         baseline_model = HybridModel.mechanistic_only(params)
         for batch in test_batches:
-            deltas.append(
-                evaluate(hybrid, [batch]).metrics["nrmse_mean"]
-                - evaluate(baseline_model, [batch]).metrics["nrmse_mean"]
+            hybrid_nrmse = evaluate(hybrid, [batch]).metrics["nrmse_mean"]
+            hybrid_vs_baseline_deltas.append(
+                hybrid_nrmse - evaluate(baseline_model, [batch]).metrics["nrmse_mean"]
+            )
+            hybrid_vs_pure_ml_deltas.append(
+                hybrid_nrmse - evaluate(pure_ml, [batch]).metrics["nrmse_mean"]
             )
 
-    ci = paired_bootstrap_ci(
-        np.asarray(deltas, dtype=np.float64),
+    hybrid_vs_baseline_ci = paired_bootstrap_ci(
+        np.asarray(hybrid_vs_baseline_deltas, dtype=np.float64),
+        n_bootstrap=config.n_bootstrap,
+        seed=config.bootstrap_seed,
+    )
+    hybrid_vs_pure_ml_ci = paired_bootstrap_ci(
+        np.asarray(hybrid_vs_pure_ml_deltas, dtype=np.float64),
         n_bootstrap=config.n_bootstrap,
         seed=config.bootstrap_seed,
     )
@@ -133,6 +156,9 @@ def run_repeated_study(
         config=config,
         baseline_reports=baseline_reports,
         candidate_reports=candidate_reports,
-        nrmse_delta=ci,
+        pure_ml_reports=pure_ml_reports,
+        nrmse_delta=hybrid_vs_baseline_ci,
+        hybrid_vs_pure_ml_delta=hybrid_vs_pure_ml_ci,
         admissible_runs=sum(report.constraints_ok for report in candidate_reports),
+        pure_ml_admissible_runs=sum(report.constraints_ok for report in pure_ml_reports),
     )

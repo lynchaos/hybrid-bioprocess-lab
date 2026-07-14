@@ -17,6 +17,7 @@ from .features import FEATURE_NAMES, FEATURE_VERSION, build_features
 from .hybrid import HybridModel
 from .inference import HybridPredictor, InferenceError, TrajectoryPrediction
 from .mechanistic import FeedProfile, KineticParameters, simulate
+from .pure_ml import PureMLConfig, PureMLTrajectoryModel, train_pure_ml_trajectory
 from .reporting import render_html, render_markdown, write_report
 from .study import (
     ConfidenceInterval,
@@ -57,6 +58,8 @@ __all__ = [
     "InferenceError",
     "KineticParameters",
     "NullCorrection",
+    "PureMLConfig",
+    "PureMLTrajectoryModel",
     "ScientificConstraintError",
     "SklearnCorrection",
     "StudyConfig",
@@ -78,6 +81,7 @@ __all__ = [
     "simulate",
     "torch_estimator",
     "track_run",
+    "train_pure_ml_trajectory",
     "train_and_evaluate",
     "train_bootstrap_ensemble",
     "train_correction",

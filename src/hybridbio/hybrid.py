@@ -17,6 +17,7 @@ from numpy.typing import NDArray
 from .constraints import ConstraintReport, check_trajectory
 from .corrections import CorrectionModel, NullCorrection
 from .corrections import save as save_correction
+from .data import Batch
 from .features import FEATURE_VERSION, features_at_point
 from .mechanistic import FeedProfile, KineticParameters, default_initial_state, simulate
 
@@ -67,6 +68,18 @@ class HybridModel:
             dt_h=self.dt_h,
             mu_correction=self._mu_correction,
         )
+
+    def simulate_batch(self, batch: Batch) -> tuple[Array, Array]:
+        """Simulate under the feed and initial state of one observed batch."""
+        model = HybridModel(
+            params=self.params,
+            feed=batch.feed,
+            correction=self.correction,
+            t_end_h=self.t_end_h,
+            dt_h=self.dt_h,
+            feature_version=self.feature_version,
+        )
+        return model.simulate(batch.y0)
 
     def simulate_checked(self, y0: Array | None = None) -> tuple[Array, Array, ConstraintReport]:
         """Simulate, then check the result against scientific constraints.
