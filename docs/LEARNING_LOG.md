@@ -172,14 +172,59 @@ So admissibility gained teeth in four places:
 
 ## Still to do
 
-- [ ] Swap the sklearn MLP for a Torch module behind the same `CorrectionModel` Protocol —
-      the interface was designed for this, so it should be a new file and nothing else. Good
-      test of whether the abstraction was real or decorative.
-- [ ] Ray Tune as an alternative to the Optuna sweep, for the distributed-execution practice.
-- [ ] A proper model registry stage (MLflow Model Registry), with the validation gate as the
-      promotion criterion.
-- [ ] Train the correction on **rollout** rather than one-step targets. Right now it learns
-      from observed states but is deployed on its own predicted states — a classic
-      distribution shift, and I suspect it is leaving accuracy on the table.
+- [ ] Uncertainty on the correction. A bounded multiplier with no error bar is a confident
+  claim, and I am not sure it has earned that.
+- [ ] Connect the MLflow registry integration to a remote tracking server and a deployment
+  approval workflow. The local SQLite-backed registry proves the contract, not operations.
+
+---
+
+## Entry 6 — The interface was real after all
+
+The `CorrectionModel` protocol now has two implementations: the original sklearn pipeline
+and a small PyTorch network. The ODE solver, feature builder, evaluator, persistence path,
+and scientific constraints did not change.
+
+That is the useful test of an abstraction: not whether it makes a diagram look tidy, but
+whether a second implementation can arrive without disturbing its consumers. There was one
+numerical detail worth keeping: the rest of the simulator uses `float64`, while Torch layers
+default to `float32`. The Torch module therefore explicitly uses double precision. Mixing the
+two did not produce a subtle model-quality issue; it failed loudly at the integration boundary.
+
+The real lesson is less glamorous: data types are part of the model contract whenever a neural
+component is embedded in a scientific code path.
+
+---
+
+## Entry 7 — Training is not serving
+
+The project now has a `HybridPredictor` loader and a `hybridbio train|predict|sweep` CLI.
+That made an uncomfortable gap visible: a successful notebook model is not an inference
+interface. Serving needs a stable artifact layout, input defaults, constraint checks, and a
+human-readable output path, not just a fitted estimator held in memory.
+
+The model registry repeats the same principle at promotion time. Registration is refused if
+the candidate failed scientific validation or regressed against the mechanistic baseline. The
+gate is deliberately in the registry path, not merely in a report that someone might forget to
+read. The test uses a temporary SQLite-backed MLflow server so it exercises a real registry
+interaction without requiring shared infrastructure.
+
+---
+
+## Entry 8 — Rollouts are a different dataset
+
+One-step labels are built from observed states. During simulation, however, the correction sees
+states produced by its own previous corrections. Those distributions only coincide while the
+model is perfect, which is precisely when the distinction would not matter.
+
+Rollout training now mixes observed target rows with target rows reconstructed from simulated
+trajectories. Invalid rollouts are discarded rather than treated as ordinary examples. The
+implementation keeps the correction bounded and still checks the full trajectory, because a
+robustness technique that normalises broken trajectories into training data would defeat the
+point of the gate.
+
+Ray Tune mirrors the Optuna workflow for distributed-search practice. In both cases,
+inadmissible trials are pruned rather than penalised: biology remains a feasibility condition,
+not a negotiable term in the objective.
 - [ ] Uncertainty on the correction. A bounded multiplier with no error bar is a confident
       claim, and I am not sure it has earned that.

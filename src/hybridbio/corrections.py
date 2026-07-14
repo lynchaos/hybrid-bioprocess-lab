@@ -91,12 +91,20 @@ class SklearnCorrection:
         self.bounds = bounds
         self._fitted = False
 
-    def fit(self, X: Array, y: Array) -> SklearnCorrection:
+    def fit(
+        self,
+        X: Array,
+        y: Array,
+        sample_weight: Array | None = None,
+    ) -> SklearnCorrection:
         if len(X) != len(y):
             raise ValueError(f"X/y length mismatch: {len(X)} vs {len(y)}")
         if len(X) == 0:
             raise ValueError("refusing to fit a correction model on zero rows")
-        self.estimator.fit(X, y)
+        fit_kwargs = {}
+        if sample_weight is not None:
+            fit_kwargs["sample_weight"] = sample_weight
+        self.estimator.fit(X, y, **fit_kwargs)
         self._fitted = True
         return self
 
