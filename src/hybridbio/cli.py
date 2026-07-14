@@ -20,8 +20,10 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .audit import audit_correction
 from .evaluation import compare
 from .inference import HybridPredictor
+from .lineage import build_manifest, write_manifest
 from .mechanistic import FeedProfile, KineticParameters
 from .reporting import write_report
 from .training import TrainingConfig, train_and_evaluate
@@ -58,7 +60,27 @@ def _train(args: argparse.Namespace) -> int:
 
     out_dir = Path(args.out_dir)
     hybrid.save(out_dir)
+    manifest = build_manifest(
+        data_source="synthetic-fed-batch",
+        dataset_id=f"seed-{args.seed}",
+        train_batches=train_batches,
+        test_batches=test_batches,
+        params=params,
+        candidate_report=test_report,
+        baseline_report=baseline_report,
+        training_config={
+            "seed": args.seed,
+            "backend": args.backend,
+            "n_batches": args.n_batches,
+            "n_test": args.n_test,
+            "t_end_h": cfg.t_end_h,
+            "dt_h": cfg.dt_h,
+        },
+    )
+    write_manifest(out_dir / "manifest.json", manifest)
+    correction_audit = audit_correction(hybrid, train_batches)
     print(f"model saved to {out_dir}")
+    print(f"lineage manifest written to {out_dir / 'manifest.json'}")
     print(test_report.render())
     print("\nbaseline vs candidate delta:")
     for k, v in compare(baseline_report, test_report).items():
@@ -71,6 +93,8 @@ def _train(args: argparse.Namespace) -> int:
             baseline_report=baseline_report,
             candidate_report=test_report,
             batches=test_batches,
+            manifest=manifest,
+            audit=correction_audit,
         )
         print(f"report written to {args.report}")
     return 0

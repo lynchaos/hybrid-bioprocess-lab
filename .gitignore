@@ -39,6 +39,7 @@ env/
 
 # MLflow / tracking
 mlruns/
+artifacts/
 *.joblib
 
 # Coverage

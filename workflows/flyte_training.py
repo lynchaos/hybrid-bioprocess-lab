@@ -18,6 +18,7 @@ Register:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 try:
     from flytekit import ImageSpec, Resources, task, workflow
@@ -50,6 +51,8 @@ from hybridbio import (
     train_correction,
     train_test_split_batches,
 )
+from hybridbio.lineage import build_manifest, write_manifest
+from hybridbio.promotion import validate_promotion
 
 
 @dataclass
@@ -61,6 +64,9 @@ class TrainingResult:
     baseline_nrmse_mean: float
     n_violations: int
     passed: bool
+    model_dir: str
+    candidate_metrics: dict[str, float]
+    baseline_metrics: dict[str, float]
 
 
 @task(requests=Resources(cpu="1", mem="2Gi") if Resources else None)
@@ -76,7 +82,9 @@ def make_dataset(n_batches: int, seed: int) -> int:
 
 
 @task(requests=Resources(cpu="2", mem="4Gi") if Resources else None)
-def train_and_score(seed: int, n_batches: int, n_test: int) -> TrainingResult:
+def train_and_score(
+    seed: int, n_batches: int, n_test: int, model_output_dir: str
+) -> TrainingResult:
     params = KineticParameters()
     cfg = TrainingConfig()
 
@@ -93,6 +101,21 @@ def train_and_score(seed: int, n_batches: int, n_test: int) -> TrainingResult:
 
         report = evaluate(hybrid, test_batches)
         baseline_report = evaluate(baseline, test_batches)
+        model_dir = Path(model_output_dir) / f"seed-{seed}"
+        hybrid.save(model_dir)
+        write_manifest(
+            model_dir / "manifest.json",
+            build_manifest(
+                data_source="synthetic-fed-batch",
+                dataset_id=f"seed-{seed}",
+                train_batches=train_batches,
+                test_batches=test_batches,
+                params=params,
+                candidate_report=report,
+                baseline_report=baseline_report,
+                training_config={"seed": seed, "n_batches": n_batches, "n_test": n_test},
+            ),
+        )
 
         run.metrics(report.metrics)
         run.metrics({f"baseline_{k}": v for k, v in baseline_report.metrics.items()})
@@ -105,11 +128,13 @@ def train_and_score(seed: int, n_batches: int, n_test: int) -> TrainingResult:
         baseline_nrmse_mean=baseline_report.metrics["nrmse_mean"],
         n_violations=report.n_violations(),
         passed=report.passed,
+        model_dir=str(model_dir),
+        candidate_metrics=report.metrics,
+        baseline_metrics=baseline_report.metrics,
     )
 
 
-@task
-def validation_gate(result: TrainingResult) -> TrainingResult:
+def validate_training_result(result: TrainingResult) -> TrainingResult:
     """The gate. It can, and should, fail the pipeline.
 
     Two independent conditions, and BOTH must hold:
@@ -120,34 +145,50 @@ def validation_gate(result: TrainingResult) -> TrainingResult:
          the ML layer is pure operational cost with negative scientific value,
          and someone should be told rather than allowed to keep tuning.
     """
-    if result.n_violations > 0:
-        raise ValueError(
-            f"SCIENTIFIC VALIDATION FAILED: {result.n_violations} constraint "
-            "violation(s). Refusing to register this model regardless of its metrics."
-        )
-    if result.nrmse_mean >= result.baseline_nrmse_mean:
-        raise ValueError(
-            f"REGRESSION: hybrid nrmse {result.nrmse_mean:.4f} did not improve on the "
-            f"mechanistic baseline {result.baseline_nrmse_mean:.4f}. The correction "
-            "model is not earning its keep."
-        )
+    validate_promotion(
+        nrmse_mean=result.nrmse_mean,
+        baseline_nrmse_mean=result.baseline_nrmse_mean,
+        n_violations=result.n_violations,
+    )
     return result
 
 
 @task
+def validation_gate(result: TrainingResult) -> TrainingResult:
+    """Flyte wrapper around the pure, unit-tested promotion decision."""
+    return validate_training_result(result)
+
+
+@task
 def register_model(result: TrainingResult) -> str:
-    """Stand-in for pushing to a model registry."""
-    return (
-        f"registered: nrmse={result.nrmse_mean:.4f} "
-        f"(baseline {result.baseline_nrmse_mean:.4f}), "
-        f"titre_err={result.final_titre_rel_err:.4f}, violations=0"
+    """Promote the gated artifact through the MLflow model registry."""
+    from hybridbio.evaluation import EvaluationReport
+    from hybridbio.registry import log_and_register
+
+    candidate = EvaluationReport(metrics=result.candidate_metrics, n_batches=1)
+    baseline = EvaluationReport(metrics=result.baseline_metrics, n_batches=1)
+    return log_and_register(
+        model_dir=result.model_dir,
+        candidate_report=candidate,
+        baseline_report=baseline,
+        run_name="flyte-train-and-register",
     )
 
 
 @workflow
-def train_hybrid_wf(n_batches: int = 24, n_test: int = 6, seed: int = 7) -> str:
+def train_hybrid_wf(
+    n_batches: int = 24,
+    n_test: int = 6,
+    seed: int = 7,
+    model_output_dir: str = "artifacts/flyte",
+) -> str:
     seed_out = make_dataset(n_batches=n_batches, seed=seed)
-    result = train_and_score(seed=seed_out, n_batches=n_batches, n_test=n_test)
+    result = train_and_score(
+        seed=seed_out,
+        n_batches=n_batches,
+        n_test=n_test,
+        model_output_dir=model_output_dir,
+    )
     gated = validation_gate(result=result)
     return register_model(result=gated)
 

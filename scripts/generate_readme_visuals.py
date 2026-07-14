@@ -13,11 +13,14 @@ import numpy as np
 
 from hybridbio import (
     KineticParameters,
+    PureMLConfig,
     StudyConfig,
     TrainingConfig,
+    evaluate,
     generate_dataset,
     run_repeated_study,
     train_and_evaluate,
+    train_pure_ml_trajectory,
     train_test_split_batches,
 )
 
@@ -37,6 +40,15 @@ def main() -> None:
         p=params,
         cfg=training_config,
     )
+    pure_ml_report = evaluate(
+        train_pure_ml_trajectory(
+            train_batches,
+            params=params,
+            config=PureMLConfig(seed=7),
+            t_end_h=training_config.t_end_h,
+        ),
+        test_batches,
+    )
     study = run_repeated_study(
         StudyConfig(
             seeds=(7, 17, 29),
@@ -51,18 +63,24 @@ def main() -> None:
 
     baseline = baseline_report.metrics["nrmse_mean"]
     hybrid = hybrid_report.metrics["nrmse_mean"]
+    pure_ml = pure_ml_report.metrics["nrmse_mean"]
     ci = study.nrmse_delta
     fig, (axis_metrics, axis_study) = plt.subplots(1, 2, figsize=(11, 4.25))
     fig.patch.set_facecolor("white")
 
     bars = axis_metrics.bar(
-        ["Mechanistic\nbaseline", "Constrained\nhybrid"],
-        [baseline, hybrid],
-        color=["#496A81", "#008B8B"],
+        ["Mechanistic\nbaseline", "Constrained\nhybrid", "Direct\npure ML"],
+        [baseline, hybrid, pure_ml],
+        color=["#496A81", "#008B8B", "#C2410C"],
         width=0.6,
     )
-    axis_metrics.bar_label(bars, labels=[f"{baseline:.3f}", f"{hybrid:.3f}"], padding=4)
-    axis_metrics.set_ylim(0, max(baseline, hybrid) * 1.3)
+    axis_metrics.bar_label(
+        bars,
+        labels=[f"{baseline:.3f}", f"{hybrid:.3f}", f"{pure_ml:.3f}\nGATE FAIL"],
+        padding=4,
+        fontsize=8,
+    )
+    axis_metrics.set_ylim(0, max(baseline, hybrid, pure_ml) * 1.45)
     axis_metrics.set_ylabel("Held-out mean NRMSE")
     axis_metrics.set_title("One held-out split")
     axis_metrics.spines[["top", "right"]].set_visible(False)
@@ -101,7 +119,7 @@ def main() -> None:
     fig.text(
         0.5,
         0.01,
-        "Synthetic data only. All repeated-study candidates were constraint-admissible.",
+        "Synthetic data only. Direct pure ML has lower error here but fails the scientific gate.",
         ha="center",
         fontsize=9,
         color="#4B5563",

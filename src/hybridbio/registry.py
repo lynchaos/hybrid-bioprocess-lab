@@ -17,6 +17,7 @@ from mlflow.tracking import MlflowClient
 
 from .evaluation import EvaluationReport
 from .inference import HybridPredictor
+from .lineage import load_manifest
 
 
 class RegistryError(Exception):
@@ -59,6 +60,12 @@ def log_and_register(
         If the candidate fails the validation gate or MLflow interaction fails.
     """
     model_dir = Path(model_dir)
+    manifest_path = model_dir / "manifest.json"
+    manifest = load_manifest(manifest_path) if manifest_path.exists() else None
+    if manifest is not None and manifest.promotion_decision != "eligible_for_registration":
+        raise RegistryError(
+            f"refusing to register: manifest rejects promotion ({manifest.promotion_reason})"
+        )
     if not candidate_report.passed:
         raise RegistryError(
             f"refusing to register: candidate did not pass validation. "
@@ -86,6 +93,16 @@ def log_and_register(
             mlflow.log_metrics({f"baseline_{k}": v for k, v in baseline_report.metrics.items()})
             mlflow.set_tag("feature_version", _load_feature_version(model_dir))
             mlflow.set_tag("constraints_ok", str(candidate_report.constraints_ok))
+            if manifest is not None:
+                mlflow.set_tags(
+                    {
+                        "lineage_schema_version": manifest.schema_version,
+                        "lineage_git_sha": manifest.git_sha,
+                        "lineage_data_source": manifest.data_source,
+                        "promotion_decision": manifest.promotion_decision,
+                    }
+                )
+                mlflow.log_artifact(str(manifest_path), artifact_path="lineage")
 
             predictor = HybridPredictor.load(model_dir)
             example = predictor.predict(check=False)

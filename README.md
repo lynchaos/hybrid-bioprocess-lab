@@ -28,7 +28,7 @@ This repo is an answer to both.
 | Where does ML belong? | A bounded, smooth correction to the specific growth rate, not unconstrained state derivatives. |
 | What stops implausible models? | Constraints are hard promotion and selection gates, not a penalty in an accuracy objective. |
 | Is the result repeatable? | Whole-batch splits, predeclared seeds, and paired bootstrap confidence intervals. |
-| Can it leave a notebook? | Package API, CLI, saved-model inference, MLflow registration, reports, Docker, and CI. |
+| Can it leave a notebook? | Package API, CLI, saved-model inference, MLflow registration, lineage artifacts, reports, Docker, and CI. |
 | What remains unknown? | Performance, calibration, and safety on external real batches. |
 
 ## Model architecture
@@ -61,6 +61,7 @@ flowchart LR
 | Data contract | `src/hybridbio/ingestion.py` | Unit-explicit CSV validation before modeling |
 | Research studies | `src/hybridbio/study.py`, `uncertainty.py` | Repeated seeds, batch bootstrap CIs, trajectory intervals |
 | Pure-ML comparator | `src/hybridbio/pure_ml.py` | Direct trajectory benchmark with no mechanistic state evolution |
+| Lineage and audit | `src/hybridbio/lineage.py`, `audit.py` | Versioned split/provenance record and correction sensitivity diagnostics |
 | Inference | `src/hybridbio/inference.py` | Load a saved model and predict trajectories |
 | Reporting | `src/hybridbio/reporting.py` | Markdown/HTML reports for scientists and CI |
 | Registry | `src/hybridbio/registry.py` | MLflow model registry with validation gate |
@@ -140,8 +141,10 @@ Tests are split by concern:
 - `test_ingestion.py` — CSV units and data-contract failures
 - `test_study.py` — repeated-study and paired-bootstrap behavior
 - `test_uncertainty.py` — batch-bootstrap trajectory intervals
+- `test_lineage.py`, `test_audit.py` — reproducibility records and correction diagnostics
+- `test_cli.py`, `test_flyte_workflow.py` — saved CLI artifacts and promotion-gate failures
 
-The local suite contains 54 tests. GitHub Actions validates quality across
+The local suite contains 62 tests. GitHub Actions validates quality across
 Python 3.11 and 3.12, then runs a Docker CLI smoke test.
 
 ### Train and save a model from the CLI
@@ -149,6 +152,13 @@ Python 3.11 and 3.12, then runs a Docker CLI smoke test.
 ```bash
 hybridbio train --out-dir ./models/run-001 --n-batches 24 --n-test 6 --report report.md
 ```
+
+Each training artifact includes `manifest.json`: source/split batch IDs,
+feature version, kinetic parameters, training configuration, candidate and
+baseline metrics, scientific-gate decision, Git revision, Python version, and
+package version. The requested report includes the same lineage section plus a
+local 10th-to-90th percentile correction-sensitivity table. Those effects are
+diagnostics for review, not causal claims about correlated process variables.
 
 Use the PyTorch backend:
 
@@ -208,6 +218,14 @@ comparison fair while making the value of the mechanistic structure visible:
 an accurate direct trajectory fit is still rejected if it violates process
 constraints.
 
+The Flyte workflow now writes that same model-plus-manifest artifact before
+calling the gated `log_and_register()` MLflow path. A failing scientific gate
+or non-improving candidate cannot reach registration; both failure modes have
+direct regression coverage. The local workflow output directory is an
+explicit handoff point for a Flyte object-store artifact in a deployed
+environment, rather than a claim that this synthetic example already operates
+on a production platform.
+
 ```python
 from hybridbio import StudyConfig, run_repeated_study
 
@@ -257,7 +275,7 @@ hybrid-bioprocess-lab/
 ├── tests/                  # Pytest suite
 ├── workflows/              # Flyte, Optuna, Ray Tune
 ├── notebooks/              # Exploratory notebook
-├── docs/                   # Data contract, learning log, pitch support, visuals
+├── docs/                   # Public data contract, learning log, and visuals
 ├── Dockerfile
 ├── pyproject.toml
 └── .github/workflows/ci.yml
@@ -286,9 +304,9 @@ the lessons. It is the most honest part of the project.
 ## Next validation milestones
 
 1. Evaluate against versioned real process batches from distinct operating regimes.
-2. Add a pure data-driven trajectory comparator under the same batch-level split.
-3. Calibrate bootstrap intervals and define decision thresholds with process experts.
-4. Connect the local MLflow registry proof to a remote approval and deployment workflow.
+2. Calibrate bootstrap intervals and define decision thresholds with process experts.
+3. Replace the local Flyte handoff directory with a versioned remote artifact store and human approval policy.
+4. Define monitored inference SLOs and drift thresholds with process experts before any process-facing use.
 
 ---
 

@@ -16,9 +16,11 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from .audit import CorrectionAudit
 from .evaluation import EvaluationReport
 from .hybrid import HybridModel
 from .inference import TrajectoryPrediction
+from .lineage import ExperimentManifest
 
 Array = NDArray[np.float64]
 
@@ -30,6 +32,8 @@ def write_report(
     candidate_report: EvaluationReport | None = None,
     batches: list[Any] | None = None,
     trajectory: TrajectoryPrediction | None = None,
+    manifest: ExperimentManifest | None = None,
+    audit: CorrectionAudit | None = None,
     format: str = "markdown",
 ) -> Path:
     """Write a report to disk."""
@@ -41,6 +45,8 @@ def write_report(
             candidate_report=candidate_report,
             batches=batches,
             trajectory=trajectory,
+            manifest=manifest,
+            audit=audit,
         )
     elif format == "html":
         text = render_html(
@@ -64,6 +70,8 @@ def render_markdown(
     candidate_report: EvaluationReport | None = None,
     batches: list[Any] | None = None,
     trajectory: TrajectoryPrediction | None = None,
+    manifest: ExperimentManifest | None = None,
+    audit: CorrectionAudit | None = None,
 ) -> str:
     """Render a markdown report."""
     lines: list[str] = [
@@ -114,6 +122,45 @@ def render_markdown(
             lines.append(f"- Batch {i}: {report.summary()}")
         lines.append("")
 
+    if manifest is not None:
+        lines.extend(
+            [
+                "## Experiment lineage",
+                "",
+                f"- Dataset: `{manifest.data_source}` / `{manifest.dataset_id}`",
+                f"- Train batches: {', '.join(manifest.train_batch_ids)}",
+                f"- Held-out batches: {', '.join(manifest.test_batch_ids)}",
+                f"- Git revision: `{manifest.git_sha}`",
+                f"- Promotion decision: **{manifest.promotion_decision}** "
+                f"({manifest.promotion_reason})",
+                "",
+            ]
+        )
+
+    if audit is not None:
+        lines.extend(["## Correction audit", ""])
+        lines.append(
+            "Multiplier range over observed states: "
+            f"{audit.correction_min:.4f} to {audit.correction_max:.4f} "
+            f"(mean {audit.correction_mean:.4f})."
+        )
+        lines.extend(
+            [
+                "",
+                "| Feature | 10th-to-90th percentile effect |",
+                "|---------|-------------------------------:|",
+            ]
+        )
+        for name in audit.feature_names:
+            lines.append(f"| {name} | {audit.feature_effects[name]:.6f} |")
+        lines.extend(
+            [
+                "",
+                "Effects are one-feature local perturbation diagnostics, not causal attributions.",
+                "",
+            ]
+        )
+
     lines.append("## Correction curve sample")
     lines.append("")
     lines.append(_correction_curve_text(hybrid, trajectory))
@@ -128,6 +175,8 @@ def render_html(
     candidate_report: EvaluationReport | None = None,
     batches: list[Any] | None = None,
     trajectory: TrajectoryPrediction | None = None,
+    manifest: ExperimentManifest | None = None,
+    audit: CorrectionAudit | None = None,
 ) -> str:
     """Render a simple HTML report."""
     md = render_markdown(
@@ -136,6 +185,8 @@ def render_html(
         candidate_report=candidate_report,
         batches=batches,
         trajectory=trajectory,
+        manifest=manifest,
+        audit=audit,
     )
     body = md.replace("\n", "\n    ")
     return f"""<!DOCTYPE html>

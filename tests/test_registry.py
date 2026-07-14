@@ -6,6 +6,8 @@ running server.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from hybridbio import (
@@ -59,3 +61,35 @@ def test_register_refuses_failed_candidate(tmp_path, mlflow_tmp_uri) -> None:
     failed = EvaluationReport()
     with pytest.raises(RegistryError, match="refusing to register"):
         log_and_register(model_dir, candidate_report=failed, baseline_report=baseline)
+
+
+def test_register_refuses_rejected_manifest(tmp_path, mlflow_tmp_uri) -> None:
+    model_dir, candidate, baseline = _trained_and_evaluated_model_dir(tmp_path)
+    manifest_path = model_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "v1",
+                "created_at_utc": "2026-01-01T00:00:00Z",
+                "data_source": "synthetic-fed-batch",
+                "dataset_id": "test",
+                "train_batch_ids": ["B000"],
+                "test_batch_ids": ["B001"],
+                "feature_version": "v1",
+                "kinetic_parameters": {},
+                "training_config": {},
+                "candidate_metrics": candidate.metrics,
+                "baseline_metrics": baseline.metrics,
+                "candidate_constraints_ok": False,
+                "candidate_violations": 1,
+                "promotion_decision": "rejected",
+                "promotion_reason": "scientific constraints failed",
+                "git_sha": "test",
+                "python_version": "3.11",
+                "package_version": "test",
+            }
+        )
+    )
+
+    with pytest.raises(RegistryError, match="manifest rejects promotion"):
+        log_and_register(model_dir, candidate_report=candidate, baseline_report=baseline)

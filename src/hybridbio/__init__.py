@@ -3,6 +3,7 @@
 Public surface, deliberately narrow.
 """
 
+from .audit import CorrectionAudit, audit_correction
 from .constraints import ConstraintReport, ScientificConstraintError, check_trajectory
 from .corrections import (
     CorrectionModel,
@@ -16,7 +17,9 @@ from .evaluation import EvaluationReport, compare, evaluate
 from .features import FEATURE_NAMES, FEATURE_VERSION, build_features
 from .hybrid import HybridModel
 from .inference import HybridPredictor, InferenceError, TrajectoryPrediction
+from .lineage import ExperimentManifest, build_manifest, load_manifest, write_manifest
 from .mechanistic import FeedProfile, KineticParameters, simulate
+from .promotion import validate_promotion
 from .pure_ml import PureMLConfig, PureMLTrajectoryModel, train_pure_ml_trajectory
 from .reporting import render_html, render_markdown, write_report
 from .study import (
@@ -44,11 +47,13 @@ __version__ = "0.4.0"
 
 __all__ = [
     "Batch",
+    "CorrectionAudit",
     "ConstraintReport",
     "ConfidenceInterval",
     "CorrectionModel",
     "EvaluationReport",
     "EnsembleConfig",
+    "ExperimentManifest",
     "FEATURE_NAMES",
     "FEATURE_VERSION",
     "FeedProfile",
@@ -68,12 +73,15 @@ __all__ = [
     "TrajectoryPrediction",
     "TrajectoryInterval",
     "TrainingConfig",
+    "audit_correction",
+    "build_manifest",
     "build_features",
     "check_trajectory",
     "compare",
     "evaluate",
     "generate_dataset",
     "mlp_estimator",
+    "load_manifest",
     "paired_bootstrap_ci",
     "render_html",
     "render_markdown",
@@ -87,5 +95,7 @@ __all__ = [
     "train_correction",
     "train_test_split_batches",
     "tree_estimator",
+    "validate_promotion",
+    "write_manifest",
     "write_report",
 ]
