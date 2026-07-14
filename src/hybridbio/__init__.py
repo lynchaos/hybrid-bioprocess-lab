@@ -18,7 +18,20 @@ from .hybrid import HybridModel
 from .inference import HybridPredictor, InferenceError, TrajectoryPrediction
 from .mechanistic import FeedProfile, KineticParameters, simulate
 from .reporting import render_html, render_markdown, write_report
+from .study import (
+    ConfidenceInterval,
+    StudyConfig,
+    StudyResult,
+    paired_bootstrap_ci,
+    run_repeated_study,
+)
 from .training import TrainingConfig, track_run, train_and_evaluate, train_correction
+from .uncertainty import (
+    EnsembleConfig,
+    HybridEnsemble,
+    TrajectoryInterval,
+    train_bootstrap_ensemble,
+)
 
 try:
     from .torch_correction import TorchCorrection, torch_estimator
@@ -31,20 +44,26 @@ __version__ = "0.4.0"
 __all__ = [
     "Batch",
     "ConstraintReport",
+    "ConfidenceInterval",
     "CorrectionModel",
     "EvaluationReport",
+    "EnsembleConfig",
     "FEATURE_NAMES",
     "FEATURE_VERSION",
     "FeedProfile",
     "HybridModel",
+    "HybridEnsemble",
     "HybridPredictor",
     "InferenceError",
     "KineticParameters",
     "NullCorrection",
     "ScientificConstraintError",
     "SklearnCorrection",
+    "StudyConfig",
+    "StudyResult",
     "TorchCorrection",
     "TrajectoryPrediction",
+    "TrajectoryInterval",
     "TrainingConfig",
     "build_features",
     "check_trajectory",
@@ -52,12 +71,15 @@ __all__ = [
     "evaluate",
     "generate_dataset",
     "mlp_estimator",
+    "paired_bootstrap_ci",
     "render_html",
     "render_markdown",
+    "run_repeated_study",
     "simulate",
     "torch_estimator",
     "track_run",
     "train_and_evaluate",
+    "train_bootstrap_ensemble",
     "train_correction",
     "train_test_split_batches",
     "tree_estimator",

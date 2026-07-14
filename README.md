@@ -25,6 +25,8 @@ This repo is an answer to both.
 | Scientific constraints | `src/hybridbio/constraints.py` | Non-negotiable biology/physics checks |
 | Training | `src/hybridbio/training.py`, `rollout.py` | One-step and rollout training |
 | Evaluation | `src/hybridbio/evaluation.py` | Metrics + admissibility, co-equal |
+| Data contract | `src/hybridbio/ingestion.py` | Unit-explicit CSV validation before modeling |
+| Research studies | `src/hybridbio/study.py`, `uncertainty.py` | Repeated seeds, batch bootstrap CIs, trajectory intervals |
 | Inference | `src/hybridbio/inference.py` | Load a saved model and predict trajectories |
 | Reporting | `src/hybridbio/reporting.py` | Markdown/HTML reports for scientists and CI |
 | Registry | `src/hybridbio/registry.py` | MLflow model registry with validation gate |
@@ -137,6 +139,32 @@ pyflyte run workflows/flyte_training.py train_hybrid_wf --n_batches 24
 ```bash
 python workflows/ray_tune_sweep.py --trials 30
 ```
+
+## Synthetic Study Evidence
+
+The repository distinguishes a single model run from evidence. `study.py`
+repeats held-out, batch-level comparisons over predeclared seeds and reports a
+paired bootstrap confidence interval for the hybrid-minus-mechanistic NRMSE.
+A result is called an improvement only when every run is scientifically
+admissible and the interval is strictly below zero.
+
+```python
+from hybridbio import StudyConfig, run_repeated_study
+
+result = run_repeated_study(StudyConfig(seeds=(7, 17, 29, 43, 59)))
+print(result.nrmse_delta)
+print(result.candidate_improves)
+```
+
+`uncertainty.py` trains a bootstrap ensemble by resampling whole batches,
+then returns trajectory quantiles and empirical held-out coverage. The
+intervals describe uncertainty from the available synthetic training batches;
+they are **not** operational prediction guarantees. Calibration on external,
+real batches is required before using them for process decisions.
+
+For the required CSV column names, physical units, and validation policy, see
+[docs/data-contract.md](docs/data-contract.md). No missing values are silently
+imputed at this boundary.
 
 ---
 

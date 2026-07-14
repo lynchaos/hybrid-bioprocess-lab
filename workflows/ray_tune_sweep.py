@@ -2,8 +2,8 @@
 
 This mirrors optuna_sweep.py but exercises Ray Tune, which the job description
 lists explicitly. The contract is identical: a trial that violates a scientific
-constraint is rejected (here via a large reported metric with a custom tag), not
-scored as a small penalty.
+constraint is recorded for diagnostics and excluded from selection, not scored
+with an artificial penalty.
 
 Run:
     python workflows/ray_tune_sweep.py --trials 30
@@ -47,10 +47,11 @@ def _objective(config: dict) -> None:
     report = evaluate(model, _TEST_BATCHES)
 
     if not report.constraints_ok:
-        # Report a huge metric so Tune knows this trial is inadmissible.
+        # NaN is deliberately not a loss. Invalid trials remain visible in Ray
+        # diagnostics but are filtered out before any candidate is selected.
         ray_train.report(
             {
-                "nrmse_mean": 1e6,
+                "nrmse_mean": float("nan"),
                 "constraints_ok": False,
                 "n_violations": report.n_violations(),
             }
@@ -107,7 +108,10 @@ def main() -> None:
         ),
     )
     results = tuner.fit()
-    best = results.get_best_result()
+    admissible = [result for result in results if result.metrics.get("constraints_ok")]
+    if not admissible:
+        raise SystemExit("no scientifically admissible Ray Tune trial was produced")
+    best = min(admissible, key=lambda result: result.metrics["nrmse_mean"])
 
     print("=" * 60)
     print(f"mechanistic baseline nrmse : {baseline_nrmse:.4f}")
@@ -115,7 +119,7 @@ def main() -> None:
     improvement = 100.0 * (1.0 - best.metrics["nrmse_mean"] / baseline_nrmse)
     print(f"improvement                : {improvement:+.1f}%")
     print(f"best params                : {best.config}")
-    inadmissible = sum(1 for r in results if not r.metrics.get("constraints_ok", True))
+    inadmissible = sum(1 for result in results if not result.metrics.get("constraints_ok", True))
     print(f"inadmissible trials        : {inadmissible}/{args.trials}")
     print(f"Ray storage                : {storage_path}")
     print("=" * 60)

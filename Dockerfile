@@ -21,4 +21,5 @@ RUN pip install --no-cache-dir -e ".[tracking,torch,ray,dev]"
 RUN useradd -m -u 1000 hybridbio && chown -R hybridbio:hybridbio /app
 USER hybridbio
 
-CMD ["hybridbio", "--help"]
+ENTRYPOINT ["hybridbio"]
+CMD ["--help"]
