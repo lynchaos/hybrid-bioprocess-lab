@@ -172,8 +172,9 @@ So admissibility gained teeth in four places:
 
 ## Still to do
 
-- [ ] Uncertainty on the correction. A bounded multiplier with no error bar is a confident
-  claim, and I am not sure it has earned that.
+- [x] Uncertainty on the correction. Addressed in Entry 9 below with a batch-level
+  bootstrap ensemble, though the resulting intervals still need external calibration
+  before anyone treats them as a process guarantee.
 - [ ] Connect the MLflow registry integration to a remote tracking server and a deployment
   approval workflow. The local SQLite-backed registry proves the contract, not operations.
 
@@ -226,5 +227,24 @@ point of the gate.
 Ray Tune mirrors the Optuna workflow for distributed-search practice. In both cases,
 inadmissible trials are pruned rather than penalised: biology remains a feasibility condition,
 not a negotiable term in the objective.
-- [ ] Uncertainty on the correction. A bounded multiplier with no error bar is a confident
-      claim, and I am not sure it has earned that.
+
+---
+
+## Entry 9 — An error bar is a claim, and I under-delivered on the first one
+
+The "still to do" above sat unaddressed for a while: a bounded multiplier with no error bar
+around it is a confident claim about something I could not actually defend. `uncertainty.py`
+now trains a small ensemble by resampling whole *batches* (never timepoints -- the same
+leakage argument as the train/test split applies here too) and reports trajectory quantiles
+from the resulting spread.
+
+The uncomfortable number is the honest part: empirical coverage on the held-out synthetic
+batches came out at **37.9%**, against a target band. That is a calibration gap, not a
+success, and I would rather ship that number than a nicer-looking one produced by hiding it.
+An interval that has not been checked against held-out data is a decoration, not a guarantee,
+and the checking is what turned this from a feature into a finding.
+
+The repeated-study confidence interval in `study.py` answers a different question --
+"is the paired NRMSE improvement real across seeds?" -- and should not be confused with this
+one, which asks "how much should I trust a single predicted trajectory?" Both matter. Neither
+substitutes for the other, and neither substitutes for calibration on real batches.

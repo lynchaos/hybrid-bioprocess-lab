@@ -142,9 +142,10 @@ Tests are split by concern:
 - `test_study.py` — repeated-study and paired-bootstrap behavior
 - `test_uncertainty.py` — batch-bootstrap trajectory intervals
 - `test_lineage.py`, `test_audit.py` — reproducibility records and correction diagnostics
-- `test_cli.py`, `test_flyte_workflow.py` — saved CLI artifacts and promotion-gate failures
+- `test_cli.py` — saved CLI artifacts and reports
+- `test_flyte_workflow.py`, `test_flyte_workflow_tasks.py` — promotion rules and executable Flyte task paths
 
-The local suite contains 62 tests. GitHub Actions validates quality across
+The local suite contains 74 tests. GitHub Actions validates quality across
 Python 3.11 and 3.12, then runs a Docker CLI smoke test.
 
 ### Train and save a model from the CLI

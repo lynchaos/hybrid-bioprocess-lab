@@ -100,6 +100,9 @@ class HybridModel:
             "feature_version": self.feature_version,
             "t_end_h": self.t_end_h,
             "dt_h": self.dt_h,
+            "feed.rate": self.feed.rate,
+            "feed.start_h": self.feed.start_h,
+            "feed.S_feed": self.feed.S_feed,
             **{f"param.{k}": v for k, v in self.params.as_dict().items()},
         }
         (directory / "metadata.json").write_text(_to_json(meta))

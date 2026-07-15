@@ -100,14 +100,20 @@ def evaluate(model: BatchTrajectoryModel, batches: list[Batch]) -> EvaluationRep
         t, Y_pred = model.simulate_batch(batch)
         report.constraints.append(check_trajectory(t, Y_pred, model.params))
 
-        n = min(len(batch.t), len(t))
+        if batch.t[0] < t[0] or batch.t[-1] > t[-1]:
+            raise ValueError(
+                f"batch {batch.batch_id!r} observations fall outside the simulated time range"
+            )
+        aligned_pred = np.column_stack(
+            [np.interp(batch.t, t, Y_pred[:, index]) for index in range(Y_pred.shape[1])]
+        )
         for state in SCORED_STATES:
             i = STATE_NAMES.index(state)
-            per_state[state].append(nrmse(batch.Y[:n, i], Y_pred[:n, i]))
+            per_state[state].append(nrmse(batch.Y[:, i], aligned_pred[:, i]))
 
         i_P = STATE_NAMES.index("P")
-        truth = float(batch.Y[n - 1, i_P])
-        pred = float(Y_pred[n - 1, i_P])
+        truth = float(batch.Y[-1, i_P])
+        pred = float(aligned_pred[-1, i_P])
         if truth > 1e-9:
             final_titre_err.append(abs(pred - truth) / truth)
 

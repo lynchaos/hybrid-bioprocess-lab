@@ -11,13 +11,16 @@ from pathlib import Path
 from typing import Any
 
 import mlflow
-from mlflow.models.signature import infer_signature
+import numpy as np
+from mlflow.models import ModelSignature
 from mlflow.pyfunc import PythonModel  # type: ignore[attr-defined]
 from mlflow.tracking import MlflowClient
+from mlflow.types import Schema, TensorSpec
 
 from .evaluation import EvaluationReport
 from .inference import HybridPredictor
 from .lineage import load_manifest
+from .mechanistic import default_initial_state
 
 
 class RegistryError(Exception):
@@ -105,10 +108,16 @@ def log_and_register(
                 mlflow.log_artifact(str(manifest_path), artifact_path="lineage")
 
             predictor = HybridPredictor.load(model_dir)
-            example = predictor.predict(check=False)
-            signature = infer_signature(
-                example.Y[:-1],  # rough input shape
-                example.Y[1:],  # rough output shape
+            predictor.predict(check=False)
+            input_example = {"y0": default_initial_state().reshape(1, -1)}
+            signature = ModelSignature(
+                inputs=Schema([TensorSpec(np.dtype(np.float64), (-1, 5), "y0")]),
+                outputs=Schema(
+                    [
+                        TensorSpec(np.dtype(np.float64), (-1,), "t"),
+                        TensorSpec(np.dtype(np.float64), (-1, 5), "Y"),
+                    ]
+                ),
             )
 
             mlflow.log_artifacts(str(model_dir), artifact_path="model")
@@ -117,6 +126,7 @@ def log_and_register(
                 python_model=_HybridPredictorPyfunc(),
                 artifacts={"model_dir": str(model_dir)},
                 signature=signature,
+                input_example=input_example,
             )
             registered = mlflow.register_model(
                 model_uri=model_info.model_uri,

@@ -85,7 +85,11 @@ def build_training_matrix(
         # Savitzky-Golay preserves the shape of the growth curve while killing
         # the high-frequency assay noise -- which is exactly what a process
         # engineer does by eye before reading a slope off a plot.
-        log_Xv = _smooth(np.log(np.maximum(Xv, 1e-9)))
+        log_Xv = _smooth(
+            np.log(np.maximum(Xv, 1e-9)),
+            window=cfg.smooth_window,
+            polyorder=cfg.smooth_polyorder,
+        )
         with np.errstate(divide="ignore", invalid="ignore"):
             dlnXv = np.gradient(log_Xv, t)
         F = np.array([batch.feed.flow(float(ti)) for ti in t])

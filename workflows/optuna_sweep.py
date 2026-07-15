@@ -13,6 +13,13 @@ cheapest lie in your loss function.
 So admissibility is not a term in the objective. It is a precondition for
 having an objective at all.
 
+`build_objective` itself lives in `hybridbio.optuna_sweep`, and is reused as-is
+by both this standalone workflow script and the `hybridbio sweep` CLI command.
+Two entry points into the same search space used to mean two copies of this
+function drifting slowly apart -- exactly the kind of duplicated modelling
+pattern a Process Model Scientist should never have to maintain twice. This
+file is now the thin one.
+
     python workflows/optuna_sweep.py --trials 30
 """
 
@@ -20,53 +27,7 @@ from __future__ import annotations
 
 import argparse
 
-from hybridbio import (
-    FeedProfile,
-    HybridModel,
-    KineticParameters,
-    TrainingConfig,
-    evaluate,
-    generate_dataset,
-    mlp_estimator,
-    train_correction,
-    train_test_split_batches,
-)
-
-
-def build_objective(n_batches: int, n_test: int, seed: int):
-    params = KineticParameters()
-    batches = generate_dataset(n_batches=n_batches, seed=seed)
-    train_batches, test_batches = train_test_split_batches(batches, n_test=n_test)
-    baseline = evaluate(HybridModel.mechanistic_only(params), test_batches)
-    baseline_nrmse = baseline.metrics["nrmse_mean"]
-
-    def objective(trial) -> float:  # noqa: ANN001
-        import optuna
-
-        width = trial.suggest_int("width", 4, 48, log=True)
-        depth = trial.suggest_int("depth", 1, 2)
-        alpha = trial.suggest_float("alpha", 1e-4, 1.0, log=True)
-        lo = trial.suggest_float("bound_lo", 0.2, 0.7)
-        hi = trial.suggest_float("bound_hi", 1.2, 2.5)
-
-        hidden = (width,) if depth == 1 else (width, max(width // 2, 2))
-        cfg = TrainingConfig(bounds=(lo, hi))
-
-        correction = train_correction(
-            train_batches, params, cfg, estimator=mlp_estimator(hidden=hidden, alpha=alpha)
-        )
-        model = HybridModel(params=params, feed=FeedProfile(), correction=correction)
-        report = evaluate(model, test_batches)
-
-        # The gate. Not a penalty -- a veto.
-        if not report.constraints_ok:
-            raise optuna.TrialPruned(f"scientifically inadmissible: {report.summary()}")
-
-        trial.set_user_attr("final_titre_rel_err", report.metrics.get("final_titre_rel_err", -1.0))
-        trial.set_user_attr("baseline_nrmse", baseline_nrmse)
-        return report.metrics["nrmse_mean"]
-
-    return objective, baseline_nrmse
+from hybridbio.optuna_sweep import build_objective
 
 
 def main() -> None:

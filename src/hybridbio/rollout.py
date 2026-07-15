@@ -49,6 +49,7 @@ def _build_targets(
     Y: Array,
     p: KineticParameters,
     cfg: RolloutConfig,
+    feed: FeedProfile,
 ) -> tuple[Array, Array]:
     """Build (X, y) targets from a single trajectory.
 
@@ -64,18 +65,10 @@ def _build_targets(
     with np.errstate(divide="ignore", invalid="ignore"):
         dlnXv = np.gradient(log_Xv, t)
 
-    feed = FeedProfile()
     F = np.array([feed.flow(float(ti)) for ti in t])
     dilution = F / np.maximum(V, 1e-9)
     mu_obs = dlnXv + p.kd + dilution
 
-    mu_mech = np.array(
-        [
-            KineticParameters().mu_max  # placeholder; real mu_mech below
-            for _ in t
-        ],
-        dtype=np.float64,
-    )
     from .mechanistic import specific_growth_rate
 
     mu_mech = np.array(
@@ -101,12 +94,12 @@ def _rollout_once(
     cfg: RolloutConfig,
 ) -> tuple[Array, Array]:
     """Unroll the model over one batch and return training rows from the simulation."""
-    t, Y = model.simulate(batch.y0)
+    t, Y = model.simulate_batch(batch)
     report = check_trajectory(t, Y, model.params)
     if not report.ok:
         # An inadmissible rollout is not a training example. It is a broken model.
         return np.empty((0, 0)), np.empty(0)
-    return _build_targets(t, Y, model.params, cfg)
+    return _build_targets(t, Y, model.params, cfg, batch.feed)
 
 
 def train_correction_rollout(
@@ -157,7 +150,7 @@ def train_correction_rollout(
         y_roll: list[Array] = []
 
         for batch in batches:
-            Xb, yb = _build_targets(batch.t, batch.Y, p, cfg)
+            Xb, yb = _build_targets(batch.t, batch.Y, p, cfg, batch.feed)
             X_obs.append(Xb)
             y_obs.append(yb)
 

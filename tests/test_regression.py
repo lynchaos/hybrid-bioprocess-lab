@@ -29,6 +29,7 @@ from hybridbio import (
     simulate,
     train_correction,
 )
+from hybridbio.data import Batch
 from hybridbio.features import N_FEATURES
 from hybridbio.mechanistic import STATE_NAMES, default_initial_state
 
@@ -161,3 +162,52 @@ def test_unfitted_correction_refuses_to_simulate(params: KineticParameters) -> N
     model = HybridModel(params=params, feed=FeedProfile(), correction=SklearnCorrection())
     with pytest.raises(RuntimeError, match="unfitted"):
         model.simulate()
+
+
+def test_training_uses_configured_smoothing(monkeypatch, dataset, params) -> None:
+    """Smoothing values in the recorded training config must control label construction."""
+    from hybridbio import training
+
+    calls: list[tuple[int, int]] = []
+
+    def capture_smoothing(series, window=9, polyorder=2):
+        calls.append((window, polyorder))
+        return series
+
+    monkeypatch.setattr(training, "_smooth", capture_smoothing)
+    training.build_training_matrix(
+        dataset[:2],
+        params,
+        training.TrainingConfig(smooth_window=5, smooth_polyorder=1),
+    )
+
+    assert calls == [(5, 1), (5, 1)]
+
+
+def test_evaluation_aligns_predictions_to_observation_times(params) -> None:
+    """Irregular scientist measurements must be compared by time, not row position."""
+    model_t = np.array([0.0, 6.0, 12.0])
+    observed_t = np.array([0.0, 3.0, 12.0])
+
+    def trajectory(t):
+        return np.column_stack((1.0 + t, 20.0 - t, 0.5 * t, 2.0 * t, np.ones_like(t)))
+
+    class LinearTrajectoryModel:
+        def __init__(self) -> None:
+            self.params = params
+
+        def simulate_batch(self, _batch):
+            return model_t, trajectory(model_t)
+
+    observed = trajectory(observed_t)
+    batch = Batch(
+        batch_id="irregular-grid",
+        t=observed_t,
+        Y=observed,
+        feed=FeedProfile(rate=0.0),
+        y0=observed[0],
+    )
+
+    report = evaluate(LinearTrajectoryModel(), [batch])
+
+    assert report.metrics["nrmse_mean"] == pytest.approx(0.0, abs=1e-12)

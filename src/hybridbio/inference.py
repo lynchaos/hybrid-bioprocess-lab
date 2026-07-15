@@ -19,6 +19,7 @@ from numpy.typing import NDArray
 
 from .constraints import ConstraintReport, check_trajectory
 from .corrections import CorrectionModel
+from .features import FEATURE_VERSION
 from .hybrid import HybridModel
 from .mechanistic import FeedProfile, KineticParameters
 
@@ -71,6 +72,13 @@ class HybridPredictor:
         except json.JSONDecodeError as e:
             raise InferenceError(f"corrupt metadata: {e}") from e
 
+        feature_version = str(metadata.get("feature_version", ""))
+        if feature_version != FEATURE_VERSION:
+            raise InferenceError(
+                f"incompatible feature version: artifact={feature_version!r}, "
+                f"runtime={FEATURE_VERSION!r}"
+            )
+
         params = _params_from_metadata(metadata)
         feed = _feed_from_metadata(metadata)
         correction = _load_correction(correction_path)
@@ -81,6 +89,7 @@ class HybridPredictor:
             correction=correction,
             t_end_h=float(metadata.get("t_end_h", 336.0)),
             dt_h=float(metadata.get("dt_h", 6.0)),
+            feature_version=feature_version,
         )
         return cls(model)
 

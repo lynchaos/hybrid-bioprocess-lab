@@ -10,6 +10,8 @@ Reports can be markdown or HTML. No external templating engine is required.
 
 from __future__ import annotations
 
+import html
+import re
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +57,8 @@ def write_report(
             candidate_report=candidate_report,
             batches=batches,
             trajectory=trajectory,
+            manifest=manifest,
+            audit=audit,
         )
     else:
         raise ValueError(f"unsupported report format: {format}")
@@ -188,7 +192,7 @@ def render_html(
         manifest=manifest,
         audit=audit,
     )
-    body = md.replace("\n", "\n    ")
+    body = _markdown_to_html(md)
     return f"""<!DOCTYPE html>
 <html>
 <head>
@@ -208,10 +212,89 @@ def render_html(
 </style>
 </head>
 <body>
-    {body}
+{body}
 </body>
 </html>
 """
+
+
+def _markdown_to_html(markdown: str) -> str:
+    lines = markdown.splitlines()
+    rendered: list[str] = []
+    index = 0
+    in_list = False
+
+    while index < len(lines):
+        line = lines[index]
+        if not line:
+            if in_list:
+                rendered.append("</ul>")
+                in_list = False
+            index += 1
+            continue
+
+        if (
+            line.startswith("| ")
+            and index + 1 < len(lines)
+            and _is_table_separator(lines[index + 1])
+        ):
+            if in_list:
+                rendered.append("</ul>")
+                in_list = False
+            headers = _table_cells(line)
+            rendered.append("<table>")
+            rendered.append(
+                "<thead><tr>"
+                + "".join(f"<th>{_inline_html(cell)}</th>" for cell in headers)
+                + "</tr></thead>"
+            )
+            rendered.append("<tbody>")
+            index += 2
+            while index < len(lines) and lines[index].startswith("| "):
+                cells = _table_cells(lines[index])
+                rendered.append(
+                    "<tr>" + "".join(f"<td>{_inline_html(cell)}</td>" for cell in cells) + "</tr>"
+                )
+                index += 1
+            rendered.extend(["</tbody>", "</table>"])
+            continue
+
+        heading = re.match(r"^(#{1,6}) (.+)$", line)
+        if heading:
+            if in_list:
+                rendered.append("</ul>")
+                in_list = False
+            level = len(heading.group(1))
+            rendered.append(f"<h{level}>{_inline_html(heading.group(2))}</h{level}>")
+        elif line.startswith("- "):
+            if not in_list:
+                rendered.append("<ul>")
+                in_list = True
+            rendered.append(f"<li>{_inline_html(line[2:])}</li>")
+        else:
+            if in_list:
+                rendered.append("</ul>")
+                in_list = False
+            rendered.append(f"<p>{_inline_html(line)}</p>")
+        index += 1
+
+    if in_list:
+        rendered.append("</ul>")
+    return "\n".join(rendered)
+
+
+def _inline_html(text: str) -> str:
+    escaped = html.escape(text)
+    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    return re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
+
+
+def _table_cells(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def _is_table_separator(line: str) -> bool:
+    return bool(re.fullmatch(r"\|[\s|:-]+\|", line))
 
 
 def _metrics_table(report: EvaluationReport) -> str:

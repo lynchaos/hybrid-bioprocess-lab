@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 
-from hybridbio import HybridModel, KineticParameters, generate_dataset, train_correction
+from hybridbio import (
+    FeedProfile,
+    HybridModel,
+    KineticParameters,
+    generate_dataset,
+    train_correction,
+)
 from hybridbio.inference import HybridPredictor, InferenceError
 
 
@@ -36,6 +44,30 @@ def test_predictor_uses_custom_feed(tmp_path) -> None:
     prediction = predictor.predict(feed=FeedProfile(rate=0.0))
     # No feed means constant volume.
     assert np.allclose(prediction.Y[:, 4], prediction.Y[0, 4])
+
+
+def test_saved_model_preserves_training_feed(tmp_path) -> None:
+    batches = generate_dataset(n_batches=4, seed=7)
+    correction = train_correction(batches)
+    feed = FeedProfile(rate=0.006, start_h=54.0, S_feed=280.0)
+    model = HybridModel(params=KineticParameters(), feed=feed, correction=correction)
+    model_dir = tmp_path / "custom-feed-model"
+    model.save(model_dir)
+
+    predictor = HybridPredictor.load(model_dir)
+
+    assert predictor.model.feed == feed
+
+
+def test_predictor_rejects_incompatible_feature_contract(tmp_path) -> None:
+    model_dir = _trained_model_dir(tmp_path)
+    metadata_path = model_dir / "metadata.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata["feature_version"] = "v999"
+    metadata_path.write_text(json.dumps(metadata))
+
+    with pytest.raises(InferenceError, match="feature version"):
+        HybridPredictor.load(model_dir)
 
 
 def test_predictor_rejects_missing_directory(tmp_path) -> None:
